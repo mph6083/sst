@@ -15,6 +15,7 @@ import { DnsValidatedCertificate } from "./dns-validated-certificate";
 import { RETENTION } from "./logging";
 import { dns as awsDns } from "./dns";
 import { ApiGatewayV2DomainArgs } from "./helpers/apigatewayv2-domain";
+import { toEmulatorApiUrl } from "./helpers/emulator";
 import { ApiGatewayV2LambdaRoute } from "./apigatewayv2-lambda-route";
 import { ApiGatewayV2Authorizer } from "./apigatewayv2-authorizer";
 import { apigatewayv2, cloudwatch, types } from "@pulumi/aws";
@@ -992,7 +993,7 @@ export class ApiGatewayV2 extends Component implements Link.Linkable {
         ([domain, key]) =>
           key ? `https://${domain}/${key}/` : `https://${domain}`,
       )
-      : this.api.apiEndpoint;
+      : toEmulatorApiUrl(this.api.apiEndpoint);
   }
 
   /**

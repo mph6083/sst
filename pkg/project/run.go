@@ -321,6 +321,9 @@ func (p *Project) Run(ctx context.Context, input *StackInput) error {
 					args = append(args, "--config", fmt.Sprintf("%v:%v=%v", provider, key, string(bytes)))
 				case string:
 					args = append(args, "--config", fmt.Sprintf("%v:%v=%v", provider, key, v))
+				case bool, float64:
+					// Provider flags such as skipCredentialsValidation and numeric settings.
+					args = append(args, "--config", fmt.Sprintf("%v:%v=%v", provider, key, v))
 				}
 			}
 		}

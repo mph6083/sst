@@ -12,6 +12,7 @@ import { FunctionArgs, FunctionArn } from "./function.js";
 import { VisibleError } from "../error";
 import { hashStringToPrettyString, logicalName } from "../naming";
 import { parseQueueArn } from "./helpers/arn";
+import { toEmulatorQueueUrl } from "./helpers/emulator";
 import { QueueLambdaSubscriber } from "./queue-lambda-subscriber";
 import { iam, lambda, sqs } from "@pulumi/aws";
 import { DurationHours, DurationMinutes, toSeconds } from "../duration";
@@ -450,7 +451,7 @@ export class Queue extends Component implements Link.Linkable {
    * The SQS Queue URL.
    */
   public get url() {
-    return this.queue.url;
+    return toEmulatorQueueUrl(this.queue.url);
   }
 
   /**

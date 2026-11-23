@@ -59,6 +59,14 @@ import {
 } from "./router.js";
 import { KvRoutesUpdate } from "./providers/kv-routes-update.js";
 import { KvKeys } from "./providers/kv-keys.js";
+import { isAwsEmulator } from "./helpers/emulator.js";
+
+/**
+ * Live functions on AWS Emulator use a JavaScript stub that relays through emulated SQS and
+ * DynamoDB, because the emulator cannot run the native bridge stub or reach AppSync Events.
+ */
+const isEmulatorBridge = isAwsEmulator;
+const EMULATOR_BRIDGE_RUNTIME = "nodejs22.x";
 
 /**
  * Helper type to define function ARN type
@@ -1734,6 +1742,17 @@ export class Function extends Component implements Link.Linkable {
     rpc.call("Provider.Aws.Appsync", {}),
   );
 
+  /**
+   * The queue and table live functions relay through on AWS Emulator, where the native bridge stub
+   * and AppSync Events are not available.
+   */
+  public static readonly emulatorBridge = lazy(() =>
+    rpc.call<{ queue: string; table: string }>(
+      "Provider.Aws.EmulatorBridge",
+      {},
+    ),
+  );
+
   /** @internal */
   public static reset() {
     Function.devBridgeCode().clear();
@@ -1896,8 +1915,13 @@ export class Function extends Component implements Link.Linkable {
         Function.encryptionKey().base64,
         args.link,
         args.streaming,
-        dev.apply((dev) => dev ? Function.appsync() : undefined),
-      ]).apply(([environment, dev, bootstrap, key, link, streaming, appsync]) => {
+        dev.apply((dev) =>
+          dev && !isEmulatorBridge ? Function.appsync() : undefined,
+        ),
+        dev.apply((dev) =>
+          dev && isEmulatorBridge ? Function.emulatorBridge() : undefined,
+        ),
+      ]).apply(([environment, dev, bootstrap, key, link, streaming, appsync, emulatorBridge]) => {
         const result = environment ?? {};
         result.SST_RESOURCE_App = JSON.stringify({
           name: $app.name,
@@ -1914,8 +1938,13 @@ export class Function extends Component implements Link.Linkable {
         result.SST_KEY_FILE = "resource.enc";
         if (dev) {
           result.SST_REGION = process.env.SST_AWS_REGION!;
-          result.SST_APPSYNC_HTTP = appsync.http;
-          result.SST_APPSYNC_REALTIME = appsync.realtime;
+          if (emulatorBridge) {
+            result.SST_LIVE_QUEUE = emulatorBridge.queue;
+            result.SST_LIVE_TABLE = emulatorBridge.table;
+          } else {
+            result.SST_APPSYNC_HTTP = appsync.http;
+            result.SST_APPSYNC_REALTIME = appsync.realtime;
+          }
           result.SST_FUNCTION_ID = name;
           result.SST_APP = $app.name;
           result.SST_STAGE = $app.stage;
@@ -1923,7 +1952,7 @@ export class Function extends Component implements Link.Linkable {
           if (process.env.SST_FUNCTION_TIMEOUT) {
             result.SST_FUNCTION_TIMEOUT = process.env.SST_FUNCTION_TIMEOUT;
           }
-          if (streaming) {
+          if (streaming && !isEmulatorBridge) {
             result.SST_FUNCTION_STREAMING = "true";
           }
         }
@@ -2115,6 +2144,18 @@ export class Function extends Component implements Link.Linkable {
           };
 
           function resolveDevBridge() {
+            if (isEmulatorBridge) {
+              return {
+                handler: "index.handler",
+                bundle: path.join(
+                  $cli.paths.platform,
+                  "dist",
+                  "emulator-bridge",
+                ),
+                sourcemaps: undefined,
+              };
+            }
+
             if (durable) {
               return {
                 handler: "index.handler",
@@ -2249,6 +2290,19 @@ export class Function extends Component implements Link.Linkable {
                       actions: ["appsync:*"],
                       resources: ["*"],
                     },
+                    ...(isEmulatorBridge
+                      ? [
+                          {
+                            effect: "allow",
+                            actions: [
+                              "sqs:SendMessage",
+                              "dynamodb:Query",
+                              "dynamodb:GetItem",
+                            ],
+                            resources: ["*"],
+                          },
+                        ]
+                      : []),
                     {
                       effect: "allow",
                       actions: ["s3:*"],
@@ -2698,6 +2752,10 @@ export class Function extends Component implements Link.Linkable {
           );
 
           function resolveDevRuntime() {
+            if (isEmulatorBridge) {
+              return EMULATOR_BRIDGE_RUNTIME;
+            }
+
             if (durable) {
               return "nodejs24.x";
             }

@@ -605,12 +605,20 @@ func (u *UI) functionName(functionID string) string {
 		return functionID
 	}
 	for _, resource := range u.complete.Resources {
-		if resource.Type == "sst:aws:Function" && resource.URN.Name() == functionID {
-			return strings.TrimPrefix(resource.Outputs["_metadata"].(map[string]interface{})["handler"].(string), "./")
+		isFunction := resource.Type == "sst:aws:Function" || resource.Type == "sst:cloudflare:Worker"
+		if !isFunction || resource.URN.Name() != functionID {
+			continue
 		}
-		if resource.Type == "sst:cloudflare:Worker" && resource.URN.Name() == functionID {
-			return strings.TrimPrefix(resource.Outputs["_metadata"].(map[string]interface{})["handler"].(string), "./")
+		// A function invoked while its deploy is still partial has no metadata output yet.
+		metadata, ok := resource.Outputs["_metadata"].(map[string]interface{})
+		if !ok {
+			return functionID
 		}
+		handler, ok := metadata["handler"].(string)
+		if !ok {
+			return functionID
+		}
+		return strings.TrimPrefix(handler, "./")
 	}
 	return functionID
 }

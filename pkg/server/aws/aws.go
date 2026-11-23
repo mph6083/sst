@@ -6,6 +6,7 @@ import (
 	"net/rpc"
 	"sync"
 
+	"github.com/sst/sst/v3/pkg/emulatorbridge"
 	"github.com/sst/sst/v3/pkg/project"
 	"github.com/sst/sst/v3/pkg/project/provider"
 )
@@ -52,6 +53,25 @@ func (a *aws) Appsync(input *AppsyncInput, output *AppsyncOutput) error {
 	}
 	output.Http = http
 	output.Realtime = realtime
+	return nil
+}
+
+type EmulatorBridgeInput struct {
+}
+
+// EmulatorBridge returns the queue and table live functions relay through on AWS Emulator, creating
+// them when they do not exist yet.
+func (a *aws) EmulatorBridge(input *EmulatorBridgeInput, output *emulatorbridge.Names) error {
+	unknown, ok := a.project.Provider("aws")
+	if !ok {
+		return fmt.Errorf("aws provider not found")
+	}
+	existing := unknown.(*provider.AwsProvider)
+	names := emulatorbridge.ResolveNames(a.project.App().Name, a.project.App().Stage)
+	if _, err := emulatorbridge.Ensure(context.Background(), existing.Config(), names); err != nil {
+		return err
+	}
+	*output = names
 	return nil
 }
 

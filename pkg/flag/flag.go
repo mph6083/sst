@@ -30,6 +30,10 @@ var SST_VERBOSE = isTrue("SST_VERBOSE")
 var SST_EXPERIMENTAL = isTrue("SST_EXPERIMENTAL") || isTrue("SST_EXPERIMENTAL_RUN")
 var SST_RUN_ID = os.Getenv("SST_RUN_ID")
 var SST_SKIP_APPSYNC = isTrue("SST_SKIP_APPSYNC")
+
+// SST_AWS_EMULATOR switches `sst dev` live functions to the AWS Emulator bridge: a JavaScript stub that
+// relays through emulated SQS and DynamoDB instead of the native stub over AppSync Events.
+var SST_AWS_EMULATOR = isTrue("SST_AWS_EMULATOR")
 var SST_NO_BUN = isTrue("NO_BUN") || isTrue("SST_NO_BUN")
 
 func isTrue(name string) bool {

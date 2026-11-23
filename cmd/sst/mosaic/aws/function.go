@@ -59,12 +59,14 @@ type FunctionLogEvent struct {
 }
 
 type input struct {
-	config  aws.Config
-	project *project.Project
-	server  *server.Server
-	client  *bridge.Client
-	msg     chan bridge.Message
-	prefix  string
+	// emulator is true when live functions relay through AWS Emulator instead of AppSync Events.
+	emulator bool
+	config   aws.Config
+	project  *project.Project
+	server   *server.Server
+	client   *bridge.Client
+	msg      chan bridge.Message
+	prefix   string
 }
 
 func function(ctx context.Context, input input) {
@@ -318,6 +320,9 @@ func function(ctx context.Context, input input) {
 				}
 				log.Info("worker init", "workerID", msg.Source, "functionID", init.FunctionID)
 				workerEnv[workerID] = init.Environment
+				if input.emulator {
+					workerEnv[workerID] = append(workerEnv[workerID], emulatorWorkerEnv(ctx, input.config)...)
+				}
 				if ok := startWorker(init.FunctionID, workerID); !ok {
 					result, err := http.Post("http://"+server+workerID+"/runtime/init/error", "application/json", strings.NewReader(`{"errorMessage":"Function failed to build"}`))
 					if err != nil {
@@ -439,6 +444,30 @@ func function(ctx context.Context, input input) {
 			}
 		}
 	}
+}
+
+// emulatorHostEnv lists the host variables a local worker needs to reach AWS Emulator and trust its
+// certificate. The emulator gives function code no endpoint or credentials of its own.
+var emulatorHostEnv = []string{"AWS_ENDPOINT_URL", "AWS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE"}
+
+// emulatorWorkerEnv returns the endpoint, certificate and credential variables for a local worker.
+func emulatorWorkerEnv(ctx context.Context, config aws.Config) []string {
+	result := []string{}
+	for _, key := range emulatorHostEnv {
+		if value := os.Getenv(key); value != "" {
+			result = append(result, key+"="+value)
+		}
+	}
+	credentials, err := config.Credentials.Retrieve(ctx)
+	if err != nil {
+		slog.Error("could not resolve emulator credentials for worker", "err", err)
+		return result
+	}
+	result = append(result, "AWS_ACCESS_KEY_ID="+credentials.AccessKeyID, "AWS_SECRET_ACCESS_KEY="+credentials.SecretAccessKey)
+	if credentials.SessionToken != "" {
+		result = append(result, "AWS_SESSION_TOKEN="+credentials.SessionToken)
+	}
+	return result
 }
 
 func fileLogger(p *project.Project) {

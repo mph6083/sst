@@ -8,9 +8,15 @@ import (
 	"iter"
 	"log/slog"
 
-	"github.com/sst/sst/v3/cmd/sst/mosaic/aws/appsync"
 	"github.com/sst/sst/v3/pkg/id"
 )
+
+// Transport carries bridge packets between the dev CLI and the function stubs. AppSync Events is the
+// transport on AWS; the AWS Emulator transport relays through emulated SQS and DynamoDB.
+type Transport interface {
+	Publish(ctx context.Context, channel string, event interface{}) error
+	Subscribe(ctx context.Context, channel string) (chan string, error)
+}
 
 type Packet struct {
 	Type   MessageType `json:"type"`
@@ -44,7 +50,7 @@ type Message struct {
 }
 
 type Writer struct {
-	conn      *appsync.Connection
+	conn      Transport
 	message   MessageType
 	source    string
 	channel   string
@@ -75,7 +81,7 @@ type PingBody struct {
 type RebootBody struct {
 }
 
-func newWriter(conn *appsync.Connection, source string, channel string, message MessageType) *Writer {
+func newWriter(conn Transport, source string, channel string, message MessageType) *Writer {
 	return &Writer{
 		id:       id.Ascending(),
 		conn:     conn,
@@ -148,14 +154,14 @@ func (w *Writer) Close() error {
 }
 
 type Client struct {
-	as      *appsync.Connection
+	as      Transport
 	prefix  string
 	pending map[string]chan []byte
 	out     chan Message
 	source  string
 }
 
-func NewClient(ctx context.Context, as *appsync.Connection, source string, prefix string) *Client {
+func NewClient(ctx context.Context, as Transport, source string, prefix string) *Client {
 	slog.Info("subscribing to", "prefix", prefix+"/in")
 	sub, _ := as.Subscribe(ctx, prefix+"/in")
 	result := &Client{
